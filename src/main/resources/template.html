@@ -413,7 +413,7 @@
                 }
 
                 // Lazy Loading Logic
-                if (!item._rendered) {
+                if (!item._rendered || detailsEl.children.length === 0) {
                     detailsEl.innerHTML = `
                         <div class="panel">
                             <div class="panel-header">
@@ -439,24 +439,30 @@
                     
                     detailsEl.classList.add('open'); // Open immediately to show loading state
 
-                    // Process asynchronously to avoid UI freeze
-                    const [reqFormatted, resFormatted] = await Promise.all([
-                        smartFormat(item.q),
-                        smartFormat(item.r)
-                    ]);
-
-                    document.getElementById(`code-req-${id}`).textContent = reqFormatted;
-                    document.getElementById(`code-res-${id}`).textContent = resFormatted;
                     
-                    // Highlight
-                    hljs.highlightElement(document.getElementById(`code-req-${id}`));
-                    hljs.highlightElement(document.getElementById(`code-res-${id}`));
-                    
-                    // Remove loading indicators
-                    const indicators = detailsEl.querySelectorAll('.processing-indicator');
-                    indicators.forEach(el => el.style.display = 'none');
+                    // Check if we already have the formatted text saved to avoid re-processing
+                    if (!item._formattedReq) {
+                        const [reqF, resF] = await Promise.all([
+                            smartFormat(item.q),
+                            smartFormat(item.r)
+                        ]);
+                        item._formattedReq = reqF;
+                        item._formattedRes = resF;
+                        item._rendered = true;
+                    }
 
-                    item._rendered = true;
+                    // Inject the text
+                    const reqCodeEl = document.getElementById(`code-req-${id}`);
+                    const resCodeEl = document.getElementById(`code-res-${id}`);
+        
+                    reqCodeEl.textContent = item._formattedReq;
+                    resCodeEl.textContent = item._formattedRes;
+                    
+                    hljs.highlightElement(reqCodeEl);
+                    hljs.highlightElement(resCodeEl);
+
+                    // Hide loading indicators
+                    detailsEl.querySelectorAll('.processing-indicator').forEach(el => el.style.display = 'none');
                 } else {
                     detailsEl.classList.add('open');
                 }
