@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Burp Suite History Report</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/vs2015.min.css">
+    <style>
+        :root {
+            --bg-color: #1e1e1e;
+            --text-color: #d4d4d4;
+            --border-color: #3c3c3c;
+            --accent-color: #0e639c;
+            --accent-hover: #1177bb;
+            --panel-bg: #252526;
+        }
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+        .container { max-width: 1400px; margin: auto; }
+        h1 { border-bottom: 2px solid #444; padding-bottom: 10px; margin-bottom: 20px; }
+        
+        /* Controls */
+        .controls { background-color: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 5px; padding: 15px; margin-bottom: 25px; }
+        .controls-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 15px; }
+        .text-search-group { grid-column: 1 / -1; }
+        .control-group { display: flex; flex-direction: column; }
+        .control-group label { margin-bottom: 5px; font-size: 0.9em; color: #a0a0a0; }
+        .control-group input, .control-group select {
+            background-color: #3c3c3c; color: #d4d4d4; border: 1px solid #555;
+            border-radius: 3px; padding: 8px; width: 100%; box-sizing: border-box;
+        }
+        
+        .controls-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; border-top: 1px solid var(--border-color); padding-top: 15px; }
+        .btn {
+            background-color: var(--accent-color); color: white; border: none;
+            border-radius: 3px; padding: 8px 15px; cursor: pointer; transition: background-color 0.2s;
+        }
+        .btn:hover { background-color: var(--accent-hover); }
+        .btn-secondary { background-color: #5a5a5a; }
+        .btn-secondary:hover { background-color: #6a6a6a; }
+        .counter { margin-left: auto; color: #a0a0a0; font-size: 0.9em; }
+
+        /* Pagination */
+        .pagination { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; justify-content: flex-end; }
+        .page-info { color: #a0a0a0; }
+        .btn-page { padding: 5px 10px; font-size: 0.9em; }
+        .btn-page:disabled { background-color: #333; color: #666; cursor: not-allowed; }
+
+        /* Request List */
+        #requestList { min-height: 200px; }
+        .request-item { border: 1px solid var(--border-color); border-radius: 5px; margin-bottom: 10px; overflow: hidden; }
+        .request-summary {
+            background-color: var(--panel-bg); padding: 10px 15px; cursor: pointer;
+            display: flex; justify-content: space-between; align-items: center; gap: 10px;
+        }
+        .request-summary:hover { background-color: #383839; }
+        .summary-left { font-weight: bold; font-size: 1.1em; word-break: break-all; }
+        .summary-right { font-family: 'Courier New', monospace; color: #8c8c8c; white-space: nowrap; }
+        
+        .method { display: inline-block; min-width: 50px; margin-right: 10px; }
+        .status-2xx { color: #4CAF50; }
+        .status-3xx { color: #FFC107; }
+        .status-4xx { color: #F44336; }
+        .status-5xx { color: #F44336; }
+
+        /* Details Panel */
+        .request-details { display: none; background-color: var(--bg-color); border-top: 1px solid var(--border-color); }
+        .request-details.open { display: flex; }
+        .panel { width: 50%; padding: 15px; box-sizing: border-box; overflow-x: auto; display: flex; flex-direction: column; }
+        .panel:first-child { border-right: 1px solid var(--border-color); }
+        
+        .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 10px; }
+        .panel h3 { margin: 0; color: #569cd6; font-size: 1em; }
+        
+        .btn-group { display: flex; gap: 5px; }
+        .copy-btn {
+            background-color: #3c3c3c; color: #d4d4d4; border: 1px solid #555;
+            border-radius: 3px; padding: 2px 8px; font-size: 0.8em; cursor: pointer;
+        }
+        .copy-btn:hover { background-color: #4c4c4c; }
+        .copy-btn.copied { background-color: #2a9d8f; border-color: #2a9d8f; color: white; }
+
+        .processing-indicator { color: #FFC107; font-size: 0.8em; display: none; }
+
+        pre { margin: 0; flex-grow: 1; }
+        code.hljs { 
+            background: transparent; 
+            padding: 0; 
+            font-size: 0.9em; 
+            white-space: pre-wrap; 
+            word-wrap: break-word; 
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/http.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>Burp Suite History Report</h1>
+        <p>Generated on: <span id="genTime"></span></p>
+
+        <div class="controls">
+            <!-- Filter Inputs -->
+            <div class="controls-grid">
+                <div class="control-group"><label>Host contains:</label><input type="text" id="hostFilter"></div>
+                <div class="control-group"><label>URL contains:</label><input type="text" id="urlFilter"></div>
+                <div class="control-group">
+                    <label>Method:</label>
+                    <select id="methodFilter">
+                        <option value="ALL">ALL</option>
+                        <option>GET</option>
+                        <option>POST</option>
+                        <option>PUT</option>
+                        <option>DELETE</option>
+                        <option>OPTIONS</option>
+                        <option>PATCH</option>
+                    </select>
+                </div>
+                <div class="control-group"><label>Status:</label><input type="text" id="statusFilter" placeholder="200, 4xx"></div>
+                <div class="control-group text-search-group"><label>Body/Header Search (Search to enable):</label><input type="text" id="bodySearch"></div>
+            </div>
+
+            <div class="controls-actions">
+                <button id="applyBtn" class="btn">Apply Filter</button>
+                <button id="resetBtn" class="btn btn-secondary">Reset</button>
+                <div class="counter">Showing <span id="showingCount">0</span> of <span id="totalCount">0</span></div>
+            </div>
+        </div>
+
+        <div class="pagination" id="paginationControls" style="display:none;">
+            <button id="prevPage" class="btn btn-page">Previous</button>
+            <span class="page-info">Page <span id="curPage">1</span> of <span id="totalPages">1</span></span>
+            <button id="nextPage" class="btn btn-page">Next</button>
+        </div>
+
+        <div id="requestList"></div>
+    </div>
+
+    <script>
+        const REPORT_DATA = <!-- JSON_DATA -->; 
+        const GEN_TIME = "<!-- GEN_TIME -->";
+        document.getElementById('genTime').textContent = GEN_TIME;
+    </script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const itemsPerPage = 50;
+            let currentPage = 1;
+            let filteredData = []; 
+            
+            // --- DECODING & FORMATTING HELPERS ---
+
+            function base64ToUint8Array(base64) {
+                const binaryString = atob(base64);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+                return bytes;
+            }
+
+            function uint8ArrayToBase64(bytes) {
+                let binary = '';
+                const len = bytes.byteLength;
+                for (let i = 0; i < len; i++) {
+                    binary += String.fromCharCode(bytes[i]);
+                }
+                return btoa(binary);
+            }
+
+            // Finds the double CRLF split between headers and body
+            function findSplitIndex(bytes) {
+                for(let i=0; i<bytes.length - 3; i++) {
+                    if(bytes[i]===13 && bytes[i+1]===10 && bytes[i+2]===13 && bytes[i+3]===10) {
+                        return i;
+                    }
+                }
+                return -1;
+            }
+
+            async function smartFormat(base64Str) {
+                if (!base64Str) return "";
+
+                try {
+                    const bytes = base64ToUint8Array(base64Str);
+                    const splitIdx = findSplitIndex(bytes);
+                    const decoder = new TextDecoder('utf-8');
+
+                    // No split detected? Return simple decode
+                    if (splitIdx === -1) {
+                        return safeDecode(base64Str);
+                    }
+
+                    // 1. Separate Headers and Body
+                    const headerBytes = bytes.slice(0, splitIdx);
+                    // Body starts after \\r\\n\\r\\n (4 bytes)
+                    let bodyBytes = bytes.slice(splitIdx + 4);
+                    
+                    const headersStr = decoder.decode(headerBytes);
+                    
+                    // 2. Analyze Headers
+                    const lowerHeaders = headersStr.toLowerCase();
+                    const isJson = lowerHeaders.includes('content-type: application/json') || 
+                                   lowerHeaders.includes('content-type: application/problem+json');
+                    
+                    let encoding = null;
+                    if (lowerHeaders.includes('content-encoding: gzip')) encoding = 'gzip';
+                    else if (lowerHeaders.includes('content-encoding: deflate')) encoding = 'deflate';
+                    else if (lowerHeaders.includes('content-encoding: br')) encoding = 'deflate-raw'; // Crude fallback, browsers might vary
+
+                    let processedBodyStr = "";
+                    let decompressed = false;
+
+                    // 3. Decompression (if needed and supported)
+                    if (encoding && typeof DecompressionStream !== 'undefined' && bodyBytes.length > 0) {
+                        try {
+                            const ds = new DecompressionStream(encoding);
+                            const writer = ds.writable.getWriter();
+                            writer.write(bodyBytes);
+                            writer.close();
+                            const output = await new Response(ds.readable).arrayBuffer();
+                            bodyBytes = new Uint8Array(output);
+                            decompressed = true;
+                        } catch (e) {
+                            // If 'deflate' failed, it might be 'deflate-raw' (RFC 1951) used by Microsoft
+                            if (encoding === 'deflate') {
+                                try {
+                                    const ds = new DecompressionStream('deflate-raw');
+                                    const writer = ds.writable.getWriter();
+                                    writer.write(bodyBytes);
+                                    writer.close();
+                                    const output = await new Response(ds.readable).arrayBuffer();
+                                    bodyBytes = new Uint8Array(output);
+                                    decompressed = true;
+                                } catch (e2) {
+                                    console.warn("Decompression failed (Raw fallback also failed)", e2);
+                                    processedBodyStr = "[Decompression Failed or Unsupported Browser]\\n";
+                                }
+                            } else {
+                                console.warn("Decompression failed", e);
+                                processedBodyStr = "[Decompression Failed or Unsupported Browser]\\n";
+                            }
+                        }
+                    }
+
+                    // 4. Decode Body to String (Safely)
+                    try {
+                        processedBodyStr += decoder.decode(bodyBytes);
+                    } catch (e) {
+                        // Fallback for binary data
+                        processedBodyStr += safeBytesToString(bodyBytes);
+                    }
+
+                    // 5. Prettify JSON
+                    if (isJson || (processedBodyStr.trim().startsWith('{') && processedBodyStr.trim().endsWith('}'))) {
+                        try {
+                            const jsonObj = JSON.parse(processedBodyStr);
+                            processedBodyStr = JSON.stringify(jsonObj, null, 2);
+                        } catch (e) { 
+                            // Not valid JSON, ignore
+                        }
+                    } 
+                    // 6. If not JSON and not decompressed text, sanitize binary
+                    else if (!isJson && !decompressed) {
+                        // Re-check for binary chars after possible decompression failure or raw read
+                        processedBodyStr = sanitizeBinaryString(processedBodyStr);
+                    }
+
+                    return headersStr + "\\r\\n\\r\\n" + processedBodyStr;
+
+                } catch (e) {
+                    console.error(e);
+                    return safeDecode(base64Str); // Fallback to raw
+                }
+            }
+
+            function sanitizeBinaryString(str) {
+                let safeStr = "";
+                let hasBinary = false;
+                for (let i = 0; i < str.length; i++) {
+                    const code = str.charCodeAt(i);
+                    // Allow tabs, newlines, and printable ASCII
+                    if ((code >= 32 && code <= 126) || code === 9 || code === 10 || code === 13) {
+                        safeStr += str.charAt(i);
+                    } else {
+                        safeStr += ".";
+                        hasBinary = true;
+                    }
+                }
+                return safeStr;
+            }
+
+            function safeBytesToString(bytes) {
+                 let str = "";
+                 for (let i = 0; i < bytes.length; i++) {
+                     str += String.fromCharCode(bytes[i]);
+                 }
+                 return sanitizeBinaryString(str);
+            }
+
+            // Simple decoder for the list view (lightweight)
+            function safeDecode(base64Str) {
+                if (!base64Str) return "";
+                try {
+                    const binaryString = atob(base64Str);
+                    const bytes = Uint8Array.from(binaryString, c => c.charCodeAt(0));
+                    const decoder = new TextDecoder('utf-8', { fatal: true });
+                    return decoder.decode(bytes);
+                } catch (e) {
+                    const binaryString = atob(base64Str);
+                    return sanitizeBinaryString(binaryString);
+                }
+            }
+
+            function decodeForSearch(base64Str) {
+                if (!base64Str) return "";
+                try { return atob(base64Str).toLowerCase(); } catch (e) { return ""; }
+            }
+            
+            // Pre-decode metadata
+            REPORT_DATA.forEach(item => {
+                item._h = decodeForSearch(item.h);
+                item._u = decodeForSearch(item.u);
+                item._m = decodeForSearch(item.m);
+                item._s = decodeForSearch(item.s);
+                item._rendered = false;
+            });
+
+            const listContainer = document.getElementById('requestList');
+            const showingCountEl = document.getElementById('showingCount');
+            const totalCountEl = document.getElementById('totalCount');
+            const paginationControls = document.getElementById('paginationControls');
+            const curPageEl = document.getElementById('curPage');
+            const totalPagesEl = document.getElementById('totalPages');
+            const prevBtn = document.getElementById('prevPage');
+            const nextBtn = document.getElementById('nextPage');
+
+            filteredData = [...REPORT_DATA]; 
+            totalCountEl.textContent = REPORT_DATA.length;
+            renderPage();
+
+            function renderPage() {
+                listContainer.innerHTML = '';
+                const start = (currentPage - 1) * itemsPerPage;
+                const end = start + itemsPerPage;
+                const pageItems = filteredData.slice(start, end);
+                
+                if (pageItems.length === 0) {
+                    listContainer.innerHTML = '<div style="text-align:center; padding:20px; color:#777;">No requests match your criteria.</div>';
+                    updatePaginationUI(0);
+                    return;
+                }
+
+                let htmlBuffer = '';
+                
+                pageItems.forEach(item => {
+                    const method = safeDecode(item.m);
+                    const url = safeDecode(item.u);
+                    const status = safeDecode(item.s);
+                    const time = safeDecode(item.t);
+                    const statusClass = getStatusClass(status);
+
+                    htmlBuffer += `
+                    <div class="request-item" id="req-${item.id}">
+                        <div class="request-summary" onclick="toggleDetails(${item.id})">
+                            <div class="summary-left">
+                                <span style="color:#808080; font-weight:normal;">#${item.id}&nbsp;</span>
+                                <span class="method">${escapeHtml(method)}</span>
+                                <span>${escapeHtml(url)}</span>
+                            </div>
+                            <div class="summary-right">
+                                <span class="${statusClass}">${escapeHtml(status)}</span>
+                                <span> | ${escapeHtml(time)}</span>
+                            </div>
+                        </div>
+                        <div class="request-details" id="details-${item.id}">
+                            <!-- Content injected via JS on click -->
+                        </div>
+                    </div>`;
+                });
+
+                listContainer.innerHTML = htmlBuffer;
+                updatePaginationUI(filteredData.length);
+            }
+
+            function updatePaginationUI(totalItems) {
+                const totalPages = Math.ceil(totalItems / itemsPerPage);
+                showingCountEl.textContent = totalItems;
+                curPageEl.textContent = currentPage;
+                totalPagesEl.textContent = totalPages || 1;
+                paginationControls.style.display = totalItems > itemsPerPage ? 'flex' : 'none';
+                prevBtn.disabled = currentPage === 1;
+                nextBtn.disabled = currentPage >= totalPages;
+            }
+
+            // --- INTERACTION ---
+            
+            // Global scope required for HTML onclick attributes
+            window.toggleDetails = async function(id) {
+                const detailsEl = document.getElementById(`details-${id}`);
+                const item = REPORT_DATA.find(i => i.id === id);
+
+                // Check if already open
+                if (detailsEl.classList.contains('open')) {
+                    detailsEl.classList.remove('open');
+                    return;
+                }
+
+                // Lazy Loading Logic
+                if (!item._rendered) {
+                    detailsEl.innerHTML = `
+                        <div class="panel">
+                            <div class="panel-header">
+                                <h3>Request <span class="processing-indicator" id="proc-req-${id}">(Formatting...)</span></h3>
+                                <div class="btn-group">
+                                    <button class="copy-btn" onclick="copyB64('${item.q}', this)">Copy All B64</button>
+                                    <button class="copy-btn" onclick="copyB64Body('${item.q}', this)">Copy Body B64</button>
+                                </div>
+                            </div>
+                            <pre><code class="language-http" id="code-req-${id}">Loading...</code></pre>
+                        </div>
+                        <div class="panel">
+                            <div class="panel-header">
+                                <h3>Response <span class="processing-indicator" id="proc-res-${id}">(Formatting...)</span></h3>
+                                <div class="btn-group">
+                                    <button class="copy-btn" onclick="copyB64('${item.r}', this)">Copy All B64</button>
+                                    <button class="copy-btn" onclick="copyB64Body('${item.r}', this)">Copy Body B64</button>
+                                </div>
+                            </div>
+                            <pre><code class="language-http" id="code-res-${id}">Loading...</code></pre>
+                        </div>
+                    `;
+                    
+                    detailsEl.classList.add('open'); // Open immediately to show loading state
+
+                    // Process asynchronously to avoid UI freeze
+                    const [reqFormatted, resFormatted] = await Promise.all([
+                        smartFormat(item.q),
+                        smartFormat(item.r)
+                    ]);
+
+                    document.getElementById(`code-req-${id}`).textContent = reqFormatted;
+                    document.getElementById(`code-res-${id}`).textContent = resFormatted;
+                    
+                    // Highlight
+                    hljs.highlightElement(document.getElementById(`code-req-${id}`));
+                    hljs.highlightElement(document.getElementById(`code-res-${id}`));
+                    
+                    // Remove loading indicators
+                    const indicators = detailsEl.querySelectorAll('.processing-indicator');
+                    indicators.forEach(el => el.style.display = 'none');
+
+                    item._rendered = true;
+                } else {
+                    detailsEl.classList.add('open');
+                }
+            };
+
+            window.copyB64 = function(b64data, btn) {
+                if(!b64data) return;
+                navigator.clipboard.writeText(b64data).then(() => {
+                    animateCopy(btn);
+                });
+            };
+
+            window.copyB64Body = function(fullB64, btn) {
+                if (!fullB64) return;
+                
+                try {
+                    const bytes = base64ToUint8Array(fullB64);
+                    const splitIdx = findSplitIndex(bytes);
+                    let bodyB64 = "";
+
+                    if (splitIdx === -1) {
+                        // No headers found? Copy everything as body or nothing? 
+                        // Usually implies just body or malformed HTTP. Copy all.
+                        bodyB64 = fullB64;
+                    } else {
+                        const bodyBytes = bytes.slice(splitIdx + 4);
+                        bodyB64 = uint8ArrayToBase64(bodyBytes);
+                    }
+
+                    navigator.clipboard.writeText(bodyB64).then(() => {
+                        animateCopy(btn);
+                    });
+                } catch (e) {
+                    alert("Error processing body for copy");
+                }
+            };
+
+            function animateCopy(btn) {
+                const orig = btn.textContent;
+                btn.textContent = 'Copied!';
+                btn.classList.add('copied');
+                setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 2000);
+            }
+
+            // --- FILTERS ---
+            document.getElementById('applyBtn').addEventListener('click', applyFilters);
+            document.getElementById('resetBtn').addEventListener('click', () => {
+                document.getElementById('hostFilter').value = '';
+                document.getElementById('urlFilter').value = '';
+                document.getElementById('methodFilter').value = 'ALL';
+                document.getElementById('statusFilter').value = '';
+                document.getElementById('bodySearch').value = '';
+                applyFilters();
+            });
+
+            prevBtn.addEventListener('click', () => { if(currentPage > 1) { currentPage--; renderPage(); window.scrollTo(0,0); } });
+            nextBtn.addEventListener('click', () => { 
+                const maxPage = Math.ceil(filteredData.length / itemsPerPage);
+                if(currentPage < maxPage) { currentPage++; renderPage(); window.scrollTo(0,0); } 
+            });
+
+            function applyFilters() {
+                const hostVal = document.getElementById('hostFilter').value.toLowerCase();
+                const urlVal = document.getElementById('urlFilter').value.toLowerCase();
+                const methodVal = document.getElementById('methodFilter').value.toLowerCase();
+                const statusVal = document.getElementById('statusFilter').value.toLowerCase();
+                const bodyVal = document.getElementById('bodySearch').value.toLowerCase();
+
+                // If searching body, we might miss things if we don't look at deep content, 
+                // but for performance we search the raw b64 or basic decoded headers.
+                // Deep body search in browser over 10k items is slow.
+                // Current logic searches "q" and "r" which are base64 strings.
+                // To search text body, we'd need to decode all. 
+                // Updated logic: Search decoded string if short enough, or raw.
+                
+                filteredData = REPORT_DATA.filter(item => {
+                    if(hostVal && !item._h.includes(hostVal)) return false;
+                    if(urlVal && !item._u.includes(urlVal)) return false;
+                    if(methodVal !== 'all' && item._m !== methodVal) return false;
+                    
+                    if(statusVal) {
+                        if(statusVal.includes('xx')) {
+                            if(!item._s.startsWith(statusVal[0])) return false;
+                        } else if (item._s !== statusVal && !item._s.includes(statusVal)) {
+                            return false;
+                        }
+                    }
+
+                    if(bodyVal) {
+                        // Simple check on raw base64 isn't great for text search, 
+                        // but decoding all is slow. We decode on the fly for search.
+                        const reqDecoded = decodeForSearch(item.q);
+                        const resDecoded = decodeForSearch(item.r);
+                        if(!reqDecoded.includes(bodyVal) && !resDecoded.includes(bodyVal)) return false;
+                    }
+
+                    return true;
+                });
+
+                currentPage = 1;
+                renderPage();
+            }
+
+            function getStatusClass(status) {
+                if(!status) return '';
+                if(status.startsWith('2')) return 'status-2xx';
+                if(status.startsWith('3')) return 'status-3xx';
+                if(status.startsWith('4')) return 'status-4xx';
+                if(status.startsWith('5')) return 'status-5xx';
+                return '';
+            }
+
+            function escapeHtml(text) {
+                if (!text) return '';
+                return text
+                    .replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;")
+                    .replace(/"/g, "&quot;")
+                    .replace(/'/g, "&#039;");
+            }
+        });
+    </script>
+</body>
+</html>
